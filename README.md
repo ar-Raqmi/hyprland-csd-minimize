@@ -1,9 +1,5 @@
 <h1 align="center">hyprland-csd-minimize</h1>
 <p align="center">
-  <img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License">
-  <img src="https://img.shields.io/badge/status-stable-green.svg" alt="Status">
-</p>
-<p align="center">
   <video src="https://github.com/user-attachments/assets/8108796e-7ed2-49df-837b-c5f2f472b16e" controls muted width="100%"></video>
 </p>
 <p align="center">
