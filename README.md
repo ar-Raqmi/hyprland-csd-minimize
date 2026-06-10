@@ -1,11 +1,13 @@
+<h1 align="center">hyprland-csd-minimize</h1>
 <p align="center">
   <img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License">
   <img src="https://img.shields.io/badge/status-stable-green.svg" alt="Status">
 </p>
-<h1 align="center">hyprland-csd-minimize</h1>
+<p align="center">
+  <video src="https://github.com/user-attachments/assets/8108796e-7ed2-49df-837b-c5f2f472b16e" controls muted width="100%"></video>
 </p>
 <p align="center">
-  <strong>Minimize your CSD windows in Hyprland.</strong>
+  <strong>Make your CSD Minimize button works in Hyprland.</strong>
 </p>
 
 Hyprland is a tiling window manager, so it doesn't do window minimization natively. If you press the minimize button (`_`) on a window with Client-Side Decorations (like Chrome, VSCode or Discord), the window usually do nothing, freezes or gets stuck because the app expects the compositor to handle it.
