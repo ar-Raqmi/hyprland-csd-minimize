@@ -5,5 +5,7 @@ authors = ["ar-Raqmi"]
 [csd-minimize]
 description = "Configurable Client-Side Decoration (CSD) minimize button handler"
 authors = ["ar-Raqmi"]
+build = [
+    "make",
+]
 output = "csd-minimize.so"
-build = ["make"]
