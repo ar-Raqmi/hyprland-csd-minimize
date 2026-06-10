@@ -60,7 +60,9 @@ private:
             return;
 
         std::string cmd = m_minimizeCommandVal->value();
-        system(cmd.c_str());
+        std::thread([cmd]() {
+            system(cmd.c_str());
+        }).detach();
     }
 
     void registerWindow(PHLWINDOW pWindow) {
