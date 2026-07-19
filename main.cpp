@@ -47,6 +47,11 @@ public:
             registerWindow(w);
         });
 
+        m_configReloadListener = Event::bus()->m_events.config.reloaded.listen([this]() {
+            for (auto const& w : g_pCompositor->m_windows)
+                applySuppression(w);
+        });
+
         m_windowDestroyListener = Event::bus()->m_events.window.destroy.listen([this](PHLWINDOW w) {
             unregisterWindow(w.get());
         });
@@ -54,8 +59,10 @@ public:
 
     void exit() {
         m_windowListeners.clear();
+        m_appliedSuppress.clear();
         m_windowOpenListener.reset();
         m_windowDestroyListener.reset();
+        m_configReloadListener.reset();
     }
 
 private:
@@ -63,13 +70,20 @@ private:
         CHyprSignalListener stateChanged;
     };
 
+    struct SSuppressState {
+        bool maximize = false;
+        bool fullscreen = false;
+    };
+
     HANDLE m_handle = nullptr;
     SP<Config::Values::CStringValue> m_minimizeCommandVal;
     SP<Config::Values::CStringValue> m_maximizeCommandVal;
     SP<Config::Values::CStringValue> m_fullscreenCommandVal;
     std::unordered_map<Desktop::View::CWindow*, SWindowListener> m_windowListeners;
+    std::unordered_map<Desktop::View::CWindow*, SSuppressState>  m_appliedSuppress;
     CHyprSignalListener m_windowOpenListener;
     CHyprSignalListener m_windowDestroyListener;
+    CHyprSignalListener m_configReloadListener;
 
     void runCommand(const std::string& cmd) {
         if (cmd.empty())
@@ -97,11 +111,37 @@ private:
         runCommand(m_fullscreenCommandVal->value());
     }
 
+    void applySuppression(const PHLWINDOW& pWindow) {
+        if (!pWindow)
+            return;
+        Desktop::View::CWindow* w = pWindow.get();
+        SSuppressState          prev = m_appliedSuppress.count(w) ? m_appliedSuppress[w] : SSuppressState{};
+
+        const bool wantMax = !m_maximizeCommandVal->value().empty();
+        const bool wantFs  = !m_fullscreenCommandVal->value().empty();
+
+        // Only toggle the bits we own, so a user's own window-rule suppression is never clobbered.
+        if (wantMax && !prev.maximize)
+            pWindow->m_suppressedEvents |= Desktop::View::SUPPRESS_MAXIMIZE;
+        else if (!wantMax && prev.maximize)
+            pWindow->m_suppressedEvents &= ~(uint64_t)Desktop::View::SUPPRESS_MAXIMIZE;
+
+        if (wantFs && !prev.fullscreen)
+            pWindow->m_suppressedEvents |= Desktop::View::SUPPRESS_FULLSCREEN;
+        else if (!wantFs && prev.fullscreen)
+            pWindow->m_suppressedEvents &= ~(uint64_t)Desktop::View::SUPPRESS_FULLSCREEN;
+
+        m_appliedSuppress[w] = SSuppressState{wantMax, wantFs};
+    }
+
     void registerWindow(PHLWINDOW pWindow) {
         if (!pWindow)
             return;
 
         Desktop::View::CWindow* w = pWindow.get();
+
+        applySuppression(pWindow);
+
         if (m_windowListeners.contains(w))
             return;
 
@@ -164,6 +204,7 @@ private:
 
     void unregisterWindow(Desktop::View::CWindow* w) {
         m_windowListeners.erase(w);
+        m_appliedSuppress.erase(w);
     }
 };
 
