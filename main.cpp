@@ -164,9 +164,9 @@ private:
                         return;
                     if (toplevel->m_state.requestsMinimize.value_or(false))
                         handleMinimize(pWindow);
-                    if (toplevel->m_state.requestsMaximize.value_or(false))
+                    if (toplevel->m_state.requestsMaximize.has_value())
                         handleMaximize(pWindow);
-                    if (toplevel->m_state.requestsFullscreen.value_or(false))
+                    if (toplevel->m_state.requestsFullscreen.has_value())
                         handleFullscreen(pWindow);
                 });
                 m_windowListeners[w] = std::move(listener);
@@ -188,11 +188,11 @@ private:
                     xwayland->setMinimized(false);
                     handleMinimize(pWindow);
                 }
-                if (xwayland->m_state.requestsMaximize.value_or(false)) {
+                if (xwayland->m_state.requestsMaximize.has_value()) {
                     xwayland->m_state.requestsMaximize.reset();
                     handleMaximize(pWindow);
                 }
-                if (xwayland->m_state.requestsFullscreen.value_or(false)) {
+                if (xwayland->m_state.requestsFullscreen.has_value()) {
                     xwayland->m_state.requestsFullscreen.reset();
                     handleFullscreen(pWindow);
                 }
