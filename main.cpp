@@ -25,6 +25,20 @@ public:
         );
         HyprlandAPI::addConfigValueV2(m_handle, m_minimizeCommandVal);
 
+        m_maximizeCommandVal = makeShared<Config::Values::CStringValue>(
+            "plugin:csd-minimize:maximize_command",
+            "Command to execute when the CSD maximize button is pressed (native maximize still applies). Empty by default.",
+            ""
+        );
+        HyprlandAPI::addConfigValueV2(m_handle, m_maximizeCommandVal);
+
+        m_fullscreenCommandVal = makeShared<Config::Values::CStringValue>(
+            "plugin:csd-minimize:fullscreen_command",
+            "Command to execute when the CSD fullscreen button is pressed (native fullscreen still applies). Empty by default.",
+            ""
+        );
+        HyprlandAPI::addConfigValueV2(m_handle, m_fullscreenCommandVal);
+
         for (auto const& w : g_pCompositor->m_windows) {
             registerWindow(w);
         }
@@ -51,18 +65,36 @@ private:
 
     HANDLE m_handle = nullptr;
     SP<Config::Values::CStringValue> m_minimizeCommandVal;
+    SP<Config::Values::CStringValue> m_maximizeCommandVal;
+    SP<Config::Values::CStringValue> m_fullscreenCommandVal;
     std::unordered_map<Desktop::View::CWindow*, SWindowListener> m_windowListeners;
     CHyprSignalListener m_windowOpenListener;
     CHyprSignalListener m_windowDestroyListener;
 
-    void handleMinimize(PHLWINDOW pWindow) {
-        if (!pWindow)
+    void runCommand(const std::string& cmd) {
+        if (cmd.empty())
             return;
-
-        std::string cmd = m_minimizeCommandVal->value();
         std::thread([cmd]() {
             system(cmd.c_str());
         }).detach();
+    }
+
+    void handleMinimize(PHLWINDOW pWindow) {
+        if (!pWindow)
+            return;
+        runCommand(m_minimizeCommandVal->value());
+    }
+
+    void handleMaximize(PHLWINDOW pWindow) {
+        if (!pWindow)
+            return;
+        runCommand(m_maximizeCommandVal->value());
+    }
+
+    void handleFullscreen(PHLWINDOW pWindow) {
+        if (!pWindow)
+            return;
+        runCommand(m_fullscreenCommandVal->value());
     }
 
     void registerWindow(PHLWINDOW pWindow) {
@@ -85,12 +117,17 @@ private:
                     if (!pWindow)
                         return;
                     auto xdg = pWindow->m_xdgSurface.lock();
-                    if (xdg) {
-                        auto toplevel = xdg->m_toplevel.lock();
-                        if (toplevel && toplevel->m_state.requestsMinimize.value_or(false)) {
-                            handleMinimize(pWindow);
-                        }
-                    }
+                    if (!xdg)
+                        return;
+                    auto toplevel = xdg->m_toplevel.lock();
+                    if (!toplevel)
+                        return;
+                    if (toplevel->m_state.requestsMinimize.value_or(false))
+                        handleMinimize(pWindow);
+                    if (toplevel->m_state.requestsMaximize.value_or(false))
+                        handleMaximize(pWindow);
+                    if (toplevel->m_state.requestsFullscreen.value_or(false))
+                        handleFullscreen(pWindow);
                 });
                 m_windowListeners[w] = std::move(listener);
                 return;
@@ -104,10 +141,20 @@ private:
                 if (!pWindow)
                     return;
                 auto xwayland = pWindow->m_xwaylandSurface.lock();
-                if (xwayland && xwayland->m_state.requestsMinimize.value_or(false)) {
+                if (!xwayland)
+                    return;
+                if (xwayland->m_state.requestsMinimize.value_or(false)) {
                     xwayland->m_state.requestsMinimize.reset();
                     xwayland->setMinimized(false);
                     handleMinimize(pWindow);
+                }
+                if (xwayland->m_state.requestsMaximize.value_or(false)) {
+                    xwayland->m_state.requestsMaximize.reset();
+                    handleMaximize(pWindow);
+                }
+                if (xwayland->m_state.requestsFullscreen.value_or(false)) {
+                    xwayland->m_state.requestsFullscreen.reset();
+                    handleFullscreen(pWindow);
                 }
             });
             m_windowListeners[w] = std::move(listener);
