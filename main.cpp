@@ -1,5 +1,6 @@
 #include <plugins/PluginAPI.hpp>
 #include <desktop/view/Window.hpp>
+#include <desktop/state/WindowState.hpp>
 #include <Compositor.hpp>
 #include <event/EventBus.hpp>
 #include <config/values/types/StringValue.hpp>
@@ -39,7 +40,7 @@ public:
         );
         HyprlandAPI::addConfigValueV2(m_handle, m_fullscreenCommandVal);
 
-        for (auto const& w : g_pCompositor->m_windows) {
+        for (auto const& w : Desktop::windowState()->windows()) {
             registerWindow(w);
         }
 
@@ -48,12 +49,15 @@ public:
         });
 
         m_configReloadListener = Event::bus()->m_events.config.reloaded.listen([this]() {
-            for (auto const& w : g_pCompositor->m_windows)
+            for (auto const& w : Desktop::windowState()->windows()) {
                 applySuppression(w);
+            }
         });
 
-        m_windowDestroyListener = Event::bus()->m_events.window.destroy.listen([this](PHLWINDOW w) {
-            unregisterWindow(w.get());
+        m_windowDestroyListener = Event::bus()->m_events.window.destroy.listen([this](PHLWINDOWREF w) {
+            auto pWindow = w.lock();
+            if (pWindow)
+                unregisterWindow(pWindow.get());
         });
     }
 
