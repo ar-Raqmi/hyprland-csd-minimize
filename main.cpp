@@ -12,41 +12,24 @@
 #include <chrono>
 
 class CCSDMinimizePlugin {
-public:
-    CCSDMinimizePlugin() = default;
+  public:
+    CCSDMinimizePlugin()  = default;
     ~CCSDMinimizePlugin() = default;
 
     void init(HANDLE handle) {
         m_handle = handle;
 
-        m_minimizeCommandVal = makeShared<Config::Values::CStringValue>(
-            "plugin:csd-minimize:command",
-            "Command to execute when minimizing",
-            "hyprctl dispatch togglespecialworkspace"
-        );
-        HyprlandAPI::addConfigValueV2(m_handle, m_minimizeCommandVal);
-
-        m_maximizeCommandVal = makeShared<Config::Values::CStringValue>(
-            "plugin:csd-minimize:maximize_command",
-            "Command to execute when the CSD maximize button is pressed (native maximize still applies). Empty by default.",
-            ""
-        );
-        HyprlandAPI::addConfigValueV2(m_handle, m_maximizeCommandVal);
-
-        m_fullscreenCommandVal = makeShared<Config::Values::CStringValue>(
-            "plugin:csd-minimize:fullscreen_command",
-            "Command to execute when the CSD fullscreen button is pressed (native fullscreen still applies). Empty by default.",
-            ""
-        );
-        HyprlandAPI::addConfigValueV2(m_handle, m_fullscreenCommandVal);
+        m_minimizeCommandVal = addCommand("plugin:csd-minimize:command", "Command to execute when minimizing", "hyprctl dispatch togglespecialworkspace");
+        m_maximizeCommandVal =
+            addCommand("plugin:csd-minimize:maximize_command", "Command to execute when the CSD maximize button is pressed (native maximize still applies). Empty by default.", "");
+        m_fullscreenCommandVal = addCommand("plugin:csd-minimize:fullscreen_command",
+                                            "Command to execute when the CSD fullscreen button is pressed (native fullscreen still applies). Empty by default.", "");
 
         for (auto const& w : Desktop::windowState()->windows()) {
             registerWindow(w);
         }
 
-        m_windowOpenListener = Event::bus()->m_events.window.open.listen([this](PHLWINDOW w) {
-            registerWindow(w);
-        });
+        m_windowOpenListener = Event::bus()->m_events.window.open.listen([this](PHLWINDOW w) { registerWindow(w); });
 
         m_configReloadListener = Event::bus()->m_events.config.reloaded.listen([this]() {
             for (auto const& w : Desktop::windowState()->windows()) {
@@ -62,80 +45,76 @@ public:
     }
 
     void exit() {
-        m_windowListeners.clear();
-        m_appliedSuppress.clear();
+        m_windows.clear();
         m_windowOpenListener.reset();
         m_windowDestroyListener.reset();
         m_configReloadListener.reset();
     }
 
-private:
-    struct SWindowListener {
-        CHyprSignalListener stateChanged;
-    };
-
+  private:
     struct SSuppressState {
-        bool maximize = false;
+        bool maximize   = false;
         bool fullscreen = false;
     };
 
-    HANDLE m_handle = nullptr;
-    SP<Config::Values::CStringValue> m_minimizeCommandVal;
-    SP<Config::Values::CStringValue> m_maximizeCommandVal;
-    SP<Config::Values::CStringValue> m_fullscreenCommandVal;
-    std::unordered_map<Desktop::View::CWindow*, SWindowListener> m_windowListeners;
-    std::unordered_map<Desktop::View::CWindow*, SSuppressState>  m_appliedSuppress;
-    CHyprSignalListener m_windowOpenListener;
-    CHyprSignalListener m_windowDestroyListener;
-    CHyprSignalListener m_configReloadListener;
+    struct SWindowState {
+        CHyprSignalListener stateChanged;
+        SSuppressState      suppress;
+        bool                listening = false;
+    };
+
+    HANDLE                                                    m_handle = nullptr;
+    SP<Config::Values::CStringValue>                          m_minimizeCommandVal;
+    SP<Config::Values::CStringValue>                          m_maximizeCommandVal;
+    SP<Config::Values::CStringValue>                          m_fullscreenCommandVal;
+    std::unordered_map<Desktop::View::CWindow*, SWindowState> m_windows;
+    CHyprSignalListener                                       m_windowOpenListener;
+    CHyprSignalListener                                       m_windowDestroyListener;
+    CHyprSignalListener                                       m_configReloadListener;
+
+    SP<Config::Values::CStringValue>                          addCommand(const char* key, const char* description, const char* fallback) {
+        auto value = makeShared<Config::Values::CStringValue>(key, description, fallback);
+        HyprlandAPI::addConfigValueV2(m_handle, value);
+        return value;
+    }
 
     void runCommand(const std::string& cmd) {
         if (cmd.empty())
             return;
-        std::thread([cmd]() {
-            system(cmd.c_str());
-        }).detach();
+        std::thread([cmd]() { system(cmd.c_str()); }).detach();
     }
 
-    void handleMinimize(PHLWINDOW pWindow) {
+    void handleState(PHLWINDOW pWindow, bool minimize, bool maximize, bool fullscreen) {
         if (!pWindow)
             return;
-        runCommand(m_minimizeCommandVal->value());
+        if (minimize)
+            runCommand(m_minimizeCommandVal->value());
+        if (maximize)
+            runCommand(m_maximizeCommandVal->value());
+        if (fullscreen)
+            runCommand(m_fullscreenCommandVal->value());
     }
 
-    void handleMaximize(PHLWINDOW pWindow) {
-        if (!pWindow)
-            return;
-        runCommand(m_maximizeCommandVal->value());
-    }
-
-    void handleFullscreen(PHLWINDOW pWindow) {
-        if (!pWindow)
-            return;
-        runCommand(m_fullscreenCommandVal->value());
+    static void toggleSuppressionBit(uint64_t& flags, bool want, bool prev, uint64_t mask) {
+        if (want != prev)
+            flags = want ? (flags | mask) : (flags & ~mask);
     }
 
     void applySuppression(const PHLWINDOW& pWindow) {
         if (!pWindow)
             return;
-        Desktop::View::CWindow* w = pWindow.get();
-        SSuppressState          prev = m_appliedSuppress.count(w) ? m_appliedSuppress[w] : SSuppressState{};
 
-        const bool wantMax = !m_maximizeCommandVal->value().empty();
-        const bool wantFs  = !m_fullscreenCommandVal->value().empty();
+        SSuppressState&      cur  = m_windows[pWindow.get()].suppress;
+        const SSuppressState prev = cur;
 
-        // Only toggle the bits we own, so a user's own window-rule suppression is never clobbered.
-        if (wantMax && !prev.maximize)
-            pWindow->m_suppressedEvents |= Desktop::View::SUPPRESS_MAXIMIZE;
-        else if (!wantMax && prev.maximize)
-            pWindow->m_suppressedEvents &= ~(uint64_t)Desktop::View::SUPPRESS_MAXIMIZE;
+        const bool           wantMax = !m_maximizeCommandVal->value().empty();
+        const bool           wantFs  = !m_fullscreenCommandVal->value().empty();
 
-        if (wantFs && !prev.fullscreen)
-            pWindow->m_suppressedEvents |= Desktop::View::SUPPRESS_FULLSCREEN;
-        else if (!wantFs && prev.fullscreen)
-            pWindow->m_suppressedEvents &= ~(uint64_t)Desktop::View::SUPPRESS_FULLSCREEN;
+        uint64_t&            flags = pWindow->m_suppressedEvents;
+        toggleSuppressionBit(flags, wantMax, prev.maximize, Desktop::View::SUPPRESS_MAXIMIZE);
+        toggleSuppressionBit(flags, wantFs, prev.fullscreen, Desktop::View::SUPPRESS_FULLSCREEN);
 
-        m_appliedSuppress[w] = SSuppressState{wantMax, wantFs};
+        cur = SSuppressState{wantMax, wantFs};
     }
 
     void registerWindow(PHLWINDOW pWindow) {
@@ -146,69 +125,64 @@ private:
 
         applySuppression(pWindow);
 
-        if (m_windowListeners.contains(w))
+        SWindowState& state = m_windows[w];
+        if (state.listening)
             return;
 
-        SWindowListener listener;
-        PHLWINDOWREF pWindowRef = pWindow;
+        const PHLWINDOWREF pWindowRef = pWindow;
 
-        auto xdg = pWindow->m_xdgSurface.lock();
-        if (xdg) {
-            auto toplevel = xdg->m_toplevel.lock();
-            if (toplevel) {
-                listener.stateChanged = toplevel->m_events.stateChanged.listen([this, pWindowRef]() {
-                    auto pWindow = pWindowRef.lock();
-                    if (!pWindow)
-                        return;
-                    auto xdg = pWindow->m_xdgSurface.lock();
-                    if (!xdg)
-                        return;
-                    auto toplevel = xdg->m_toplevel.lock();
-                    if (!toplevel)
-                        return;
-                    if (toplevel->m_state.requestsMinimize.value_or(false))
-                        handleMinimize(pWindow);
-                    if (toplevel->m_state.requestsMaximize.has_value())
-                        handleMaximize(pWindow);
-                    if (toplevel->m_state.requestsFullscreen.has_value())
-                        handleFullscreen(pWindow);
-                });
-                m_windowListeners[w] = std::move(listener);
-                return;
-            }
+        const auto         xdg      = pWindow->m_xdgSurface.lock();
+        const auto         toplevel = xdg ? xdg->m_toplevel.lock() : nullptr;
+        if (toplevel) {
+            state.stateChanged = toplevel->m_events.stateChanged.listen([this, pWindowRef]() {
+                auto pWindow = pWindowRef.lock();
+                if (!pWindow)
+                    return;
+                auto xdg = pWindow->m_xdgSurface.lock();
+                if (!xdg)
+                    return;
+                auto toplevel = xdg->m_toplevel.lock();
+                if (!toplevel)
+                    return;
+                handleState(pWindow, toplevel->m_state.requestsMinimize.value_or(false), toplevel->m_state.requestsMaximize.has_value(),
+                            toplevel->m_state.requestsFullscreen.has_value());
+            });
+            state.listening    = true;
+            return;
         }
 
-        auto xwayland = pWindow->m_xwaylandSurface.lock();
+        const auto xwayland = pWindow->m_xwaylandSurface.lock();
         if (xwayland) {
-            listener.stateChanged = xwayland->m_events.stateChanged.listen([this, pWindowRef]() {
+            state.stateChanged = xwayland->m_events.stateChanged.listen([this, pWindowRef]() {
                 auto pWindow = pWindowRef.lock();
                 if (!pWindow)
                     return;
                 auto xwayland = pWindow->m_xwaylandSurface.lock();
                 if (!xwayland)
                     return;
-                if (xwayland->m_state.requestsMinimize.value_or(false)) {
+
+                const bool minimize   = xwayland->m_state.requestsMinimize.value_or(false);
+                const bool maximize   = xwayland->m_state.requestsMaximize.has_value();
+                const bool fullscreen = xwayland->m_state.requestsFullscreen.has_value();
+
+                if (minimize) {
                     xwayland->m_state.requestsMinimize.reset();
                     xwayland->setMinimized(false);
-                    handleMinimize(pWindow);
                 }
-                if (xwayland->m_state.requestsMaximize.has_value()) {
+                if (maximize)
                     xwayland->m_state.requestsMaximize.reset();
-                    handleMaximize(pWindow);
-                }
-                if (xwayland->m_state.requestsFullscreen.has_value()) {
+                if (fullscreen)
                     xwayland->m_state.requestsFullscreen.reset();
-                    handleFullscreen(pWindow);
-                }
+
+                handleState(pWindow, minimize, maximize, fullscreen);
             });
-            m_windowListeners[w] = std::move(listener);
+            state.listening    = true;
             return;
         }
     }
 
     void unregisterWindow(Desktop::View::CWindow* w) {
-        m_windowListeners.erase(w);
-        m_appliedSuppress.erase(w);
+        m_windows.erase(w);
     }
 };
 
@@ -222,11 +196,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO pluginInit(HANDLE handle) {
     g_pCSDMinimizePlugin = makeUnique<CCSDMinimizePlugin>();
     g_pCSDMinimizePlugin->init(handle);
 
-    return PLUGIN_DESCRIPTION_INFO{
-        .name = "csd-minimize",
-        .description = "Configurable Client-Side Decoration (CSD) minimize button handler",
-        .author = "ar-Raqmi"
-    };
+    return PLUGIN_DESCRIPTION_INFO{.name = "csd-minimize", .description = "Configurable Client-Side Decoration (CSD) minimize button handler", .author = "ar-Raqmi"};
 }
 
 APICALL EXPORT void pluginExit() {
