@@ -10,6 +10,8 @@ Hyprland is a tiling window manager, so it doesn't do window minimization native
 
 This plugin intercepts that button click, tells the application that it isn't minimized and lets you run your own custom command.
 
+It also supports the **maximize** and **fullscreen** CSD buttons. When you set a command for either of them, the native maximize/fullscreen action is suppressed so *only* your command runs; leave them empty to keep the native behaviour.
+
 ---
 
 ## Installation
@@ -39,20 +41,25 @@ end)
 ```
 ---
 
-Configure the custom command in your `~/.config/hypr/hyprland.lua`:
+Configure the custom commands in your `~/.config/hypr/hyprland.lua`:
 
 ```lua
 hl.config({
     plugin = {
         csd_minimize = {
-            -- Example:
-            -- Move the window to the special workspace silently
+            -- Run when the minimize button is pressed.
+            -- Example: move the window to a special workspace silently.
             command = "hyprctl dispatch \"hl.dsp.window.move({ workspace = \'special\', follow = false, })\""
-            
-            -- or
 
-            -- Example: Toggle floating for the window
-            command = "hyprctl dispatch 'hl.dsp.window.float({action = \"toggle\"})'"
+            -- Run when the maximize button is pressed.
+            -- When set, native maximize is suppressed and only this command runs.
+            -- Example: toggle floating instead of maximizing.
+            maximize_command = "hyprctl dispatch 'hl.dsp.window.float({action = \"toggle\"})'"
+
+            -- Run when the fullscreen button is pressed.
+            -- When set, native fullscreen is suppressed and only this command runs.
+            -- Leave empty (or unset) to keep the native fullscreen behaviour.
+            fullscreen_command = ""
         }
     }
 })
