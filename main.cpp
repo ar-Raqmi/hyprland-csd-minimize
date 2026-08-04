@@ -19,7 +19,7 @@ class CCSDMinimizePlugin {
     void init(HANDLE handle) {
         m_handle = handle;
 
-        m_minimizeCommandVal = addCommand("plugin:csd-minimize:command", "Command to execute when minimizing", "hyprctl dispatch togglespecialworkspace");
+        m_minimizeCommandVal = addCommand("plugin:csd-minimize:command", "Command to execute when minimizing", "hyprctl dispatch 'hl.dsp.window.move({ workspace = \"special\", follow = false })'");
         m_maximizeCommandVal =
             addCommand("plugin:csd-minimize:maximize_command", "Command to execute when the CSD maximize button is pressed (native maximize still applies). Empty by default.", "");
         m_fullscreenCommandVal = addCommand("plugin:csd-minimize:fullscreen_command",
